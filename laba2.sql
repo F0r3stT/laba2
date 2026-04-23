@@ -238,6 +238,9 @@ $$ LANGUAGE plpgsql;
 
 -- ТРИГГЕРЫ (8–10)
 
+-- Добавляем колонку для счетчика (нужна для 8 триггера)
+ALTER TABLE asset ADD COLUMN IF NOT EXISTS incident_count INT DEFAULT 0;
+
 -- 8. Авто-обновление счетчика инцидентов у актива
 CREATE OR REPLACE FUNCTION update_asset_stats() RETURNS TRIGGER AS $$
 BEGIN
