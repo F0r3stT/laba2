@@ -1,96 +1,140 @@
-@startuml
-' --- Базовые настройки для компактности и ГОСТ ---
-skinparam linetype ortho
-skinparam shadowing false
-skinparam roundcorner 0
-skinparam monochrome true
-skinparam nodesep 40  ' Расстояние между узлами по горизонтали
-skinparam ranksep 40  ' Расстояние между узлами по вертикали
-skinparam defaultFontName "Times New Roman"
-skinparam defaultFontSize 12
+-- 0. Справочники статусов
+CREATE TABLE vulnerability_status (
+    id_status SERIAL PRIMARY KEY,
+    status_name VARCHAR(50) NOT NULL UNIQUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
-skinparam rectangle {
-    BackgroundColor White
-    BorderColor Black
-}
+CREATE TABLE incident_status (
+    id_status SERIAL PRIMARY KEY,
+    status_name VARCHAR(50) NOT NULL UNIQUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
-' --- 1. БЛОК: ПОДРАЗДЕЛЕНИЕ И СОТРУДНИК (Верхний левый угол) ---
-rectangle "Подразделение" as dept
-rectangle "Название" as dept_name
-rectangle "Описание" as dept_desc
-rectangle "Создано" as dept_ca
+CREATE TABLE implementation_status (
+    id_status SERIAL PRIMARY KEY,
+    status_name VARCHAR(50) NOT NULL UNIQUE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
-dept -down-> dept_name
-dept -right-> dept_desc
-dept -left-> dept_ca
+-- 1. Таблица подразделений
+CREATE TABLE department (
+    id_department SERIAL PRIMARY KEY,
+    dept_name VARCHAR(100) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
-rectangle "Сотрудник" as emp
-rectangle "ФИО" as emp_name
-rectangle "Должность" as emp_pos
-rectangle "Email" as emp_mail
-rectangle "Обновлено" as emp_ua
+-- 2. Таблица уровней критичности
+CREATE TABLE criticality_level (
+    id_severity SERIAL PRIMARY KEY,
+    severity_name VARCHAR(20) NOT NULL UNIQUE,
+    cvss_min NUMERIC(3,1) CHECK (cvss_min >= 0 AND cvss_min <= 10),
+    cvss_max NUMERIC(3,1) CHECK (cvss_max >= 0 AND cvss_max <= 10),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
-emp -down-> emp_name
-emp -right-> emp_pos
-emp -left-> emp_mail
-emp -up-> emp_ua
+-- 3. Таблица источников обнаружения
+CREATE TABLE discovery_source (
+    id_source SERIAL PRIMARY KEY,
+    source_name VARCHAR(100) NOT NULL,
+    source_type VARCHAR(50) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
-dept <-- emp
+-- 4. Таблица мер устранения
+CREATE TABLE remediation_measure (
+    id_measure SERIAL PRIMARY KEY,
+    measure_name VARCHAR(150) NOT NULL,
+    instruction TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
-' --- 2. БЛОК: АКТИВ И УЯЗВИМОСТЬ (Центр схемы) ---
-rectangle "Информационный актив" as asset
-rectangle "IP-адрес" as asset_ip
-rectangle "Тип" as asset_type
-rectangle "Название актива" as asset_n
+-- 5. Таблица сотрудников (зависит от подразделения)
+CREATE TABLE employee (
+    id_employee SERIAL PRIMARY KEY,
+    full_name VARCHAR(150) NOT NULL,
+    position VARCHAR(100) NOT NULL,
+    email VARCHAR(100) NOT NULL UNIQUE,
+    id_department INT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_employee_dept FOREIGN KEY (id_department) 
+        REFERENCES department(id_department) ON DELETE CASCADE
+);
 
-asset -down-> asset_ip
-asset -left-> asset_type
-asset -right-> asset_n
-asset -up-> dept
+-- 6. Таблица информационных активов (зависит от подразделения)
+CREATE TABLE asset (
+    id_asset SERIAL PRIMARY KEY,
+    asset_name VARCHAR(100) NOT NULL,
+    ip_address VARCHAR(15) NOT NULL,
+    asset_type VARCHAR(50) NOT NULL,
+    id_department INT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_asset_dept FOREIGN KEY (id_department) 
+        REFERENCES department(id_department) ON DELETE CASCADE
+);
 
-rectangle "Уязвимость" as vuln
-rectangle "CVE ID" as vuln_cve
-rectangle "Описание" as vuln_desc
-rectangle "Статус" as vuln_stat
+-- 7. Таблица уязвимостей (зависит от активов, критичности, источников и статуса)
+CREATE TABLE vulnerability (
+    id_vulnerability SERIAL PRIMARY KEY,
+    cve_id VARCHAR(20),
+    description TEXT NOT NULL,
+    id_status INT NOT NULL,
+    id_asset INT NOT NULL,
+    id_severity INT NOT NULL,
+    id_source INT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_vuln_status FOREIGN KEY (id_status) 
+        REFERENCES vulnerability_status(id_status) ON DELETE RESTRICT,
+    CONSTRAINT fk_vuln_asset FOREIGN KEY (id_asset) 
+        REFERENCES asset(id_asset) ON DELETE CASCADE,
+    CONSTRAINT fk_vuln_severity FOREIGN KEY (id_severity) 
+        REFERENCES criticality_level(id_severity),
+    CONSTRAINT fk_vuln_source FOREIGN KEY (id_source) 
+        REFERENCES discovery_source(id_source)
+);
 
-vuln -down-> vuln_desc
-vuln -left-> vuln_cve
-vuln -right-> vuln_stat
-vuln -up-> asset
+-- 8. Таблица инцидентов (зависит от уязвимостей, сотрудников и статуса)
+CREATE TABLE incident (
+    id_incident SERIAL PRIMARY KEY,
+    detected_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    description TEXT NOT NULL,
+    id_status INT NOT NULL,
+    id_vulnerability INT NOT NULL,
+    id_employee INT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_incident_status FOREIGN KEY (id_status) 
+        REFERENCES incident_status(id_status) ON DELETE RESTRICT,
+    CONSTRAINT fk_incident_vuln FOREIGN KEY (id_vulnerability) 
+        REFERENCES vulnerability(id_vulnerability) ON DELETE CASCADE,
+    CONSTRAINT fk_incident_employee FOREIGN KEY (id_employee) 
+        REFERENCES employee(id_employee) ON DELETE SET NULL
+);
 
-' --- 3. БЛОК: КРИТИЧНОСТЬ И ИНЦИДЕНТ (Правая сторона) ---
-rectangle "Уровень критичности" as crit
-rectangle "Наименование" as crit_name
-rectangle "CVSS Min/Max" as crit_mm
-
-crit -down-> crit_name
-crit -right-> crit_mm
-vuln -right-> crit
-
-rectangle "Инцидент" as inc
-rectangle "Дата фиксации" as inc_date
-rectangle "Статус инцидента" as inc_stat
-
-inc -down-> inc_date
-inc -right-> inc_stat
-inc -left-> vuln
-inc -up-> emp
-
-' --- 4. БЛОК: МЕРЫ (Нижняя часть) ---
-rectangle "Мера устранения" as measure
-rectangle "Инструкция" as meas_inst
-rectangle "Название меры" as meas_name
-
-measure -down-> meas_inst
-measure -right-> meas_name
-
-rectangle "Применение мер" as app
-rectangle "Статус вып." as app_stat
-rectangle "Дата изм." as app_ua
-
-app -down-> app_stat
-app -right-> app_ua
-app -left-> measure
-app -up-> vuln
-
-@enduml
+-- 9. Промежуточная таблица: Применение мер 
+CREATE TABLE measure_application (
+    id_application SERIAL PRIMARY KEY,
+    id_vulnerability INT NOT NULL,
+    id_measure INT NOT NULL,
+    id_status INT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_app_status FOREIGN KEY (id_status) 
+        REFERENCES implementation_status(id_status) ON DELETE RESTRICT,
+    CONSTRAINT fk_app_vuln FOREIGN KEY (id_vulnerability) 
+        REFERENCES vulnerability(id_vulnerability) ON DELETE CASCADE,
+    CONSTRAINT fk_app_measure FOREIGN KEY (id_measure) 
+        REFERENCES remediation_measure(id_measure) ON DELETE CASCADE,
+    CONSTRAINT uq_vuln_measure UNIQUE (id_vulnerability, id_measure)
+);
